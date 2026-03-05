@@ -1,5 +1,5 @@
 // API URL CỦA BẠN (Cập nhật link mới từ Backend)
-const API_URL = "https://script.google.com/macros/s/AKfycbwpzt1HtHdkY28RDjHy--2d331DanRw4DooCL8aLptGSmae_-HykZQZB76JMFPuHgjN/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxpS5BhQv-ZseJQeA0opLOBNbE5JR3BVZ1B1MJJZKvFEiuOqJUJd6UTI9pbc0uLJMmj/exec";
 
 var DB = { dm: [], tenders: [], stock: {}, history: [], users: [], currentUser: "", currentID: "", role: "" };
 DB.masters = { hang: [], ncc: [] };
