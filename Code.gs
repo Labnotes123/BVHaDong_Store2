@@ -167,7 +167,9 @@ function processImport(dataList) {
       lot: data.lotR1,
       hsd: data.hsdR1,
       qty: toSafeNumber_(data.slR1),
-      donVi: data.donVi
+      donVi: data.donVi,
+      hang: data.hangSX,
+      ncc: data.nhaCC
     });
 
     if (data.loaiNhap === 'R1R2' && data.lotR2) {
@@ -179,7 +181,9 @@ function processImport(dataList) {
         lot: data.lotR2,
         hsd: data.hsdR2,
         qty: toSafeNumber_(data.slR2),
-        donVi: data.donVi
+        donVi: data.donVi,
+        hang: data.hangSX,
+        ncc: data.nhaCC
       });
     }
   });
@@ -193,7 +197,7 @@ function processExport(data) {
   var today = new Date(); today.setHours(0,0,0,0); var exportDate = new Date(data.ngayXuat); exportDate.setHours(0,0,0,0);
   if (exportDate < today && data.lyDo !== "Quên không xuất kho") return {success: false, msg: "Lỗi: Ngày quá khứ sai lý do."};
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("XUAT");
-  sheet.appendRow([new Date(), new Date(data.ngayXuat), data.nguoi, data.kho, data.may, data.tenHC, data.lotR1, data.slR1, data.lotR2, data.slR2, data.lyDo]);
+  sheet.appendRow([new Date(), new Date(data.ngayXuat), data.nguoi, data.kho, data.may, data.tenHC, data.lotR1, data.slR1, data.lotR2, data.slR2, data.lyDo, data.hangSX || "", data.nhaCC || ""]);
 
   var tonKhoUpdates = [];
   if (data.lotR1) {
@@ -205,7 +209,9 @@ function processExport(data) {
       lot: data.lotR1,
       hsd: "",
       qty: -toSafeNumber_(data.slR1),
-      donVi: ""
+      donVi: "",
+      hang: data.hangSX,
+      ncc: data.nhaCC
     });
   }
   if (data.lotR2) {
@@ -217,7 +223,9 @@ function processExport(data) {
       lot: data.lotR2,
       hsd: "",
       qty: -toSafeNumber_(data.slR2),
-      donVi: ""
+      donVi: "",
+      hang: data.hangSX,
+      ncc: data.nhaCC
     });
   }
 
@@ -496,7 +504,7 @@ function getOrCreateTonKhoSheet_() {
     sheet = ss.insertSheet("TONKHO");
   }
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["Kho", "May", "Ten_HC", "Loai", "Lot", "Han", "SL", "Don_Vi", "Updated_At"]);
+    sheet.appendRow(["Kho", "May", "Ten_HC", "Loai", "Lot", "Han", "SL", "Don_Vi", "Updated_At", "Hang_SX", "Nha_CC"]);
   }
   return sheet;
 }
@@ -505,15 +513,15 @@ function applyTonKhoUpdates_(updates) {
   if (!updates || updates.length === 0) return;
 
   var sheet = getOrCreateTonKhoSheet_();
-  var rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow()-1, 9).getValues() : [];
+  var rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow()-1, 11).getValues() : [];
   var map = {};
 
-  function rowKey_(kho, may, ten, loai, lot) {
-    return normalizeStr_(kho) + "|" + normalizeStr_(may) + "|" + normalizeStr_(ten) + "|" + normalizeStr_(loai) + "|" + normalizeLotKey_(lot);
+  function rowKey_(kho, may, ten, loai, lot, hang, ncc) {
+    return normalizeStr_(kho) + "|" + normalizeStr_(may) + "|" + normalizeStr_(ten) + "|" + normalizeStr_(loai) + "|" + normalizeLotKey_(lot) + "|" + normalizeStr_(hang) + "|" + normalizeStr_(ncc);
   }
 
   for (var i = 0; i < rows.length; i++) {
-    map[rowKey_(rows[i][0], rows[i][1], rows[i][2], rows[i][3], rows[i][4])] = { idx: i, row: rows[i] };
+    map[rowKey_(rows[i][0], rows[i][1], rows[i][2], rows[i][3], rows[i][4], rows[i][9] || "", rows[i][10] || "")] = { idx: i, row: rows[i] };
   }
 
   var now = new Date();
@@ -523,9 +531,11 @@ function applyTonKhoUpdates_(updates) {
   updates.forEach(function(u) {
     var qty = toSafeNumber_(u.qty);
     var lot = normalizeStr_(u.lot);
+    var hangVal = normalizeStr_(u.hang || u.hangSX || "");
+    var nccVal = normalizeStr_(u.ncc || u.nhaCC || "");
     if (!lot || qty === 0) return;
 
-    var key = rowKey_(u.kho, u.may, u.ten, u.part, lot);
+    var key = rowKey_(u.kho, u.may, u.ten, u.part, lot, hangVal, nccVal);
     var found = map[key];
 
     if (found) {
@@ -536,6 +546,8 @@ function applyTonKhoUpdates_(updates) {
       if (hsdObj) row[5] = hsdObj;
       if (normalizeStr_(u.donVi)) row[7] = normalizeStr_(u.donVi);
       row[8] = now;
+      if (hangVal) row[9] = hangVal;
+      if (nccVal) row[10] = nccVal;
 
       touched[found.idx] = row;
     } else {
@@ -549,18 +561,20 @@ function applyTonKhoUpdates_(updates) {
         hsdObj2 || "",
         qty,
         normalizeStr_(u.donVi),
-        now
+        now,
+        hangVal,
+        nccVal
       ]);
     }
   });
 
   Object.keys(touched).forEach(function(idxStr) {
     var idx = Number(idxStr);
-    sheet.getRange(idx + 2, 1, 1, 9).setValues([touched[idx]]);
+    sheet.getRange(idx + 2, 1, 1, 11).setValues([touched[idx]]);
   });
 
   if (appendRows.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, appendRows.length, 9).setValues(appendRows);
+    sheet.getRange(sheet.getLastRow() + 1, 1, appendRows.length, 11).setValues(appendRows);
   }
 }
 
@@ -574,15 +588,15 @@ function rebuildTonKhoSheet_() {
   var xuatData = (sheetXuat && sheetXuat.getLastRow() > 1) ? sheetXuat.getRange(2, 1, sheetXuat.getLastRow()-1, sheetXuat.getLastColumn()).getValues() : [];
 
   var map = {};
-  function key(kho, may, ten, loai, lot) {
-    return normalizeStr_(kho) + "|" + normalizeStr_(may) + "|" + normalizeStr_(ten) + "|" + normalizeStr_(loai) + "|" + normalizeLotKey_(lot);
+  function key(kho, may, ten, loai, lot, hang, ncc) {
+    return normalizeStr_(kho) + "|" + normalizeStr_(may) + "|" + normalizeStr_(ten) + "|" + normalizeStr_(loai) + "|" + normalizeLotKey_(lot) + "|" + normalizeStr_(hang) + "|" + normalizeStr_(ncc);
   }
 
-  function add(kho, may, ten, loai, lot, hsd, qty, dv) {
+  function add(kho, may, ten, loai, lot, hsd, qty, dv, hang, ncc) {
     var lotStr = normalizeStr_(lot);
     var q = toSafeNumber_(qty);
     if (!lotStr || q === 0) return;
-    var k = key(kho, may, ten, loai, lotStr);
+    var k = key(kho, may, ten, loai, lotStr, hang, ncc);
     if (!map[k]) {
       var hsdObj = parseDateSafe_(hsd);
       map[k] = {
@@ -593,34 +607,38 @@ function rebuildTonKhoSheet_() {
         lot: lotStr,
         han: hsdObj || "",
         sl: 0,
-        dv: normalizeStr_(dv)
+        dv: normalizeStr_(dv),
+        hang: normalizeStr_(hang),
+        ncc: normalizeStr_(ncc)
       };
     }
     map[k].sl += q;
     var hsdObj2 = parseDateSafe_(hsd);
     if (hsdObj2) map[k].han = hsdObj2;
     if (normalizeStr_(dv)) map[k].dv = normalizeStr_(dv);
+    if (normalizeStr_(hang)) map[k].hang = normalizeStr_(hang);
+    if (normalizeStr_(ncc)) map[k].ncc = normalizeStr_(ncc);
   }
 
   nhapData.forEach(function(r) {
-    add(r[3], r[4], r[5], 'R1', r[6], r[7], r[8], r[12]);
-    add(r[3], r[4], r[5], 'R2', r[9], r[10], r[11], r[12]);
+    add(r[3], r[4], r[5], 'R1', r[6], r[7], r[8], r[12], r[13], r[14]);
+    add(r[3], r[4], r[5], 'R2', r[9], r[10], r[11], r[12], r[13], r[14]);
   });
   xuatData.forEach(function(r) {
-    add(r[3], r[4], r[5], 'R1', r[6], "", -toSafeNumber_(r[7]), "");
-    add(r[3], r[4], r[5], 'R2', r[8], "", -toSafeNumber_(r[9]), "");
+    add(r[3], r[4], r[5], 'R1', r[6], "", -toSafeNumber_(r[7]), "", r[11], r[12]);
+    add(r[3], r[4], r[5], 'R2', r[8], "", -toSafeNumber_(r[9]), "", r[11], r[12]);
   });
 
-  if (tonSheet.getLastRow() > 1) tonSheet.getRange(2, 1, tonSheet.getLastRow()-1, 9).clearContent();
+  if (tonSheet.getLastRow() > 1) tonSheet.getRange(2, 1, tonSheet.getLastRow()-1, 11).clearContent();
 
   var out = [];
   var now = new Date();
   Object.keys(map).forEach(function(k) {
     var it = map[k];
-    out.push([it.kho, it.may, it.ten, it.loai, it.lot, it.han, it.sl, it.dv, now]);
+    out.push([it.kho, it.may, it.ten, it.loai, it.lot, it.han, it.sl, it.dv, now, it.hang, it.ncc]);
   });
 
-  if (out.length > 0) tonSheet.getRange(2, 1, out.length, 9).setValues(out);
+  if (out.length > 0) tonSheet.getRange(2, 1, out.length, 11).setValues(out);
 }
 
 function getInventoryAndHistory(fromStr, toStr) {
@@ -635,7 +653,7 @@ function getInventoryAndHistory(fromStr, toStr) {
     if (tonSheet.getLastRow() <= 1) {
       rebuildTonKhoSheet_();
     }
-    var tonData = tonSheet.getLastRow() > 1 ? tonSheet.getRange(2, 1, tonSheet.getLastRow()-1, 9).getValues() : [];
+    var tonData = tonSheet.getLastRow() > 1 ? tonSheet.getRange(2, 1, tonSheet.getLastRow()-1, 11).getValues() : [];
 
     var inventory = {};
     var timeline = [];
@@ -645,14 +663,16 @@ function getInventoryAndHistory(fromStr, toStr) {
       return inventory[key];
     }
 
-    function applyLotDelta(stockPart, lotRaw, hsdRaw, qtyDelta) {
-      var lk = normalizeLotKey_(lotRaw);
+    function applyLotDelta(stockPart, lotRaw, hsdRaw, qtyDelta, hangRaw, nccRaw) {
+      var lk = normalizeLotKey_(lotRaw) + "|" + normalizeStr_(hangRaw) + "|" + normalizeStr_(nccRaw);
       if (!lk) return;
 
       if (!stockPart[lk]) {
         var hsdObj = parseDateSafe_(hsdRaw);
         stockPart[lk] = {
           lot: normalizeStr_(lotRaw),
+          hang: normalizeStr_(hangRaw),
+          ncc: normalizeStr_(nccRaw),
           hsd: hsdObj ? formatDate(hsdObj) : "",
           rawHsd: hsdObj ? hsdObj.getTime() : 0,
           sl: 0
@@ -679,12 +699,14 @@ function getInventoryAndHistory(fromStr, toStr) {
       var lot = normalizeStr_(r[4]);
       var hsd = r[5];
       var sl = toSafeNumber_(r[6]);
+      var hang = normalizeStr_(r[9]);
+      var ncc = normalizeStr_(r[10]);
       if (!kho || !ten || !lot) return;
 
       var key = kho + "|" + may + "|" + ten;
       var item = ensureItem(key);
-      if (loai === 'R2') applyLotDelta(item.R2, lot, hsd, sl);
-      else applyLotDelta(item.R1, lot, hsd, sl);
+      if (loai === 'R2') applyLotDelta(item.R2, lot, hsd, sl, hang, ncc);
+      else applyLotDelta(item.R1, lot, hsd, sl, hang, ncc);
     });
 
     nhapData.forEach(function(r) {
@@ -697,6 +719,8 @@ function getInventoryAndHistory(fromStr, toStr) {
       var lotR2Raw = normalizeStr_(r[9]);
       var slR1 = toSafeNumber_(r[8]);
       var slR2 = toSafeNumber_(r[11]);
+      var hangR = normalizeStr_(r[13]);
+      var nccR = normalizeStr_(r[14]);
 
       var ioType = (lotR1Raw && lotR2Raw) ? 'Cả R1,R2' : (lotR2Raw ? 'R2' : 'R1');
 
@@ -713,6 +737,8 @@ function getInventoryAndHistory(fromStr, toStr) {
         r1_lot: lotR1Raw, r1_sl: slR1,
         r2_lot: lotR2Raw, r2_sl: slR2,
         ioType: ioType,
+        hang: hangR,
+        ncc: nccR,
         reason: "Nhập mới"
       });
     });
@@ -727,6 +753,8 @@ function getInventoryAndHistory(fromStr, toStr) {
       var lotR2Raw = normalizeStr_(r[8]);
       var slR1 = toSafeNumber_(r[7]);
       var slR2 = toSafeNumber_(r[9]);
+      var hangR = normalizeStr_(r[11]);
+      var nccR = normalizeStr_(r[12]);
 
       var ioType = (lotR1Raw && lotR2Raw) ? 'Cả R1,R2' : (lotR2Raw ? 'R2' : 'R1');
 
@@ -743,6 +771,8 @@ function getInventoryAndHistory(fromStr, toStr) {
         r1_lot: lotR1Raw, r1_sl: slR1,
         r2_lot: lotR2Raw, r2_sl: slR2,
         ioType: ioType,
+        hang: hangR,
+        ncc: nccR,
         reason: r[10]
       });
     });
@@ -766,23 +796,25 @@ function getInventoryAndHistory(fromStr, toStr) {
       d.push(`<b>Loại:</b> ${item.ioType || 'R1'}`);
 
       if(item.r1_lot){
-        var k1 = base + "|R1|" + normalizeLotKey_(item.r1_lot);
+        var k1 = base + "|R1|" + normalizeLotKey_(item.r1_lot) + "|" + normalizeStr_(item.hang) + "|" + normalizeStr_(item.ncc);
         if(runningTracker[k1] == null) runningTracker[k1] = 0;
         runningTracker[k1] += isNhap ? item.r1_sl : -item.r1_sl;
 
         var style1 = isNhap ? 'text-success fw-bold' : 'text-danger fw-bold';
         var sign1 = isNhap ? '+' : '-';
-        d.push(`<b>R1:</b> ${item.r1_lot} <span class="${style1}">(${sign1}${item.r1_sl})</span> <span class="text-muted small">[Tồn: ${runningTracker[k1]}]</span>`);
+        var vendor1 = (item.hang || item.ncc) ? ` <span class="text-muted">(${item.hang || ''}${item.hang && item.ncc ? ' / ' : ''}${item.ncc || ''})</span>` : '';
+        d.push(`<b>R1:</b> ${item.r1_lot} <span class="${style1}">(${sign1}${item.r1_sl})</span> <span class="text-muted small">[Tồn: ${runningTracker[k1]}]</span>${vendor1}`);
       }
 
       if(item.r2_lot){
-        var k2 = base + "|R2|" + normalizeLotKey_(item.r2_lot);
+        var k2 = base + "|R2|" + normalizeLotKey_(item.r2_lot) + "|" + normalizeStr_(item.hang) + "|" + normalizeStr_(item.ncc);
         if(runningTracker[k2] == null) runningTracker[k2] = 0;
         runningTracker[k2] += isNhap ? item.r2_sl : -item.r2_sl;
 
         var style2 = isNhap ? 'text-success fw-bold' : 'text-danger fw-bold';
         var sign2 = isNhap ? '+' : '-';
-        d.push(`<b>R2:</b> ${item.r2_lot} <span class="${style2}">(${sign2}${item.r2_sl})</span> <span class="text-muted small">[Tồn: ${runningTracker[k2]}]</span>`);
+        var vendor2 = (item.hang || item.ncc) ? ` <span class="text-muted">(${item.hang || ''}${item.hang && item.ncc ? ' / ' : ''}${item.ncc || ''})</span>` : '';
+        d.push(`<b>R2:</b> ${item.r2_lot} <span class="${style2}">(${sign2}${item.r2_sl})</span> <span class="text-muted small">[Tồn: ${runningTracker[k2]}]</span>${vendor2}`);
       }
 
       item.detailHtml = d.join("<br>");
@@ -800,10 +832,14 @@ function getInventoryAndHistory(fromStr, toStr) {
       ['R1', 'R2'].forEach(function(part) {
         Object.keys(inventory[mainKey][part]).forEach(function(lk) {
           var obj = inventory[mainKey][part][lk];
-          stockOut[mainKey][part][obj.lot || lk] = {
+          var lotLabel = obj.lot || lk;
+          stockOut[mainKey][part][lk] = {
+            lot: lotLabel,
             hsd: obj.hsd || "",
             rawHsd: obj.rawHsd || 0,
-            sl: obj.sl
+            sl: obj.sl,
+            hang: obj.hang || "",
+            ncc: obj.ncc || ""
           };
         });
       });

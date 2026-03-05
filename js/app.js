@@ -1,5 +1,5 @@
 // API URL CỦA BẠN (Cập nhật link mới từ Backend)
-const API_URL = "https://script.google.com/macros/s/AKfycbxpS5BhQv-ZseJQeA0opLOBNbE5JR3BVZ1B1MJJZKvFEiuOqJUJd6UTI9pbc0uLJMmj/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxwsQJOq3V6IfVtkDaXys2s5wYsIn49yfeICCFLYVqbQfDl2T9rVDf7ycfIIyecQuEO/exec";
 
 var DB = { dm: [], tenders: [], stock: {}, history: [], users: [], currentUser: "", currentID: "", role: "" };
 DB.masters = { hang: [], ncc: [] };
@@ -320,6 +320,8 @@ function updateTenderQuotaHint(idx) {
   var sl1 = document.getElementById('slR1_' + idx) ? Number(document.getElementById('slR1_' + idx).value) || 0 : 0;
   var sl2El = document.getElementById('slR2_' + idx);
   var sl2 = sl2El ? Number(sl2El.value) || 0 : 0;
+  var r1pb = Number(tender.r1PerBox || 1) || 1;
+  var r2pb = Number(tender.r2PerBox || 1) || 1;
 
   var usage = calcTenderUsageClient(tender, loai, sl1, sl2);
   var remainBoxes = (Number(tender.soLuongThau) || 0) - (Number(tender.usedThau) || 0);
@@ -329,7 +331,16 @@ function updateTenderQuotaHint(idx) {
   var cls = afterBoxes < 0 ? 'text-danger fw-bold' : (afterBoxes <= remainBoxes * 0.2 ? 'text-warning fw-bold' : 'text-success');
   var warnText = usage.warn ? ` <span class="text-danger">${usage.warn}</span>` : '';
 
-  hintBox.innerHTML = `<div class="small ${cls}">Hạn mức còn: ${remainBoxes.toFixed(2)} ${tender.dvThau || 'ĐV thầu'} (~${remainQD.toFixed(1)} ${tender.dvSd || ''}). Sau nhập: ${Math.max(0, afterBoxes).toFixed(2)} ${tender.dvThau || ''} (~${Math.max(0, afterQD).toFixed(1)} ${tender.dvSd || ''}).${warnText}</div>`;
+  var detailR = '';
+  if (loai === 'R1R2') {
+    var remainR1 = remainBoxes * r1pb;
+    var remainR2 = remainBoxes * r2pb;
+    var afterR1 = Math.max(0, afterBoxes) * r1pb;
+    var afterR2 = Math.max(0, afterBoxes) * r2pb;
+    detailR = `<div class="small text-muted">R1 còn ~${remainR1.toFixed(1)} | Sau nhập: ${afterR1.toFixed(1)} · R2 còn ~${remainR2.toFixed(1)} | Sau nhập: ${afterR2.toFixed(1)}</div>`;
+  }
+
+  hintBox.innerHTML = `<div class="small ${cls}">Hạn mức còn: ${remainBoxes.toFixed(2)} ${tender.dvThau || 'ĐV thầu'} (~${remainQD.toFixed(1)} ${tender.dvSd || ''}). Sau nhập: ${Math.max(0, afterBoxes).toFixed(2)} ${tender.dvThau || ''} (~${Math.max(0, afterQD).toFixed(1)} ${tender.dvSd || ''}).${warnText}</div>${detailR}`;
 }
 
 function onTabThauClick() {
@@ -605,7 +616,56 @@ async function onTabBaocaoClick() {
     }
 }
 
-async function submitXuat(e) { e.preventDefault(); var radioR1 = document.querySelector('input[name="radio_R1"]:checked'); var lotR1 = "", slR1 = ""; if (radioR1) { lotR1 = radioR1.value; slR1 = document.getElementById(`qty_R1_${lotR1}`).value; } var radioR2 = document.querySelector('input[name="radio_R2"]:checked'); var lotR2 = "", slR2 = ""; if (radioR2) { lotR2 = radioR2.value; slR2 = document.getElementById(`qty_R2_${lotR2}`).value; } if (!lotR1 && !lotR2) return alert("Chưa chọn Lot để xuất!"); if ((lotR1 && !slR1) || (lotR2 && !slR2)) return alert("Chưa nhập số lượng xuất!"); document.getElementById('loading').style.display = 'flex'; var data = { ngayXuat: document.getElementById('xuatNgay').value, nguoi: DB.currentUser, kho: document.getElementById('xuatKho').value, may: document.getElementById('xuatMay').value, tenHC: document.getElementById('xuatTenHC').value, lotR1: lotR1, slR1: slR1, lotR2: lotR2, slR2: slR2, loaiChiTiet: (lotR1 && lotR2) ? "Cả 2" : (lotR1 ? "R1" : "R2"), lyDo: document.getElementById('xuatLyDo').value }; var res = await callAPI('processExport', {data: data}); document.getElementById('loading').style.display = 'none'; if(!res || !res.success) return alert(res?.msg || "Xuất kho thất bại!"); alert(res.msg || "Xuất kho thành công!");
+async function submitXuat(e) {
+  e.preventDefault();
+  var radioR1 = document.querySelector('input[name="radio_R1"]:checked');
+  var radioR2 = document.querySelector('input[name="radio_R2"]:checked');
+  var lotR1 = "", slR1 = "", hangSel = "", nccSel = "";
+  var lotR2 = "", slR2 = "";
+
+  if (radioR1) {
+    lotR1 = radioR1.dataset.lot || radioR1.value;
+    slR1 = document.getElementById(radioR1.dataset.qtyId).value;
+    hangSel = radioR1.dataset.hang || "";
+    nccSel = radioR1.dataset.ncc || "";
+  }
+
+  if (radioR2) {
+    lotR2 = radioR2.dataset.lot || radioR2.value;
+    slR2 = document.getElementById(radioR2.dataset.qtyId).value;
+    if (!hangSel && (radioR2.dataset.hang || radioR2.dataset.ncc)) {
+      hangSel = radioR2.dataset.hang || "";
+      nccSel = radioR2.dataset.ncc || "";
+    } else if (hangSel && (radioR2.dataset.hang || radioR2.dataset.ncc)) {
+      if (hangSel.toLowerCase() !== (radioR2.dataset.hang || "").toLowerCase() || nccSel.toLowerCase() !== (radioR2.dataset.ncc || "").toLowerCase()) {
+        return alert("Vui lòng chọn cùng Hãng/NCC cho R1 và R2.");
+      }
+    }
+  }
+
+  if (!lotR1 && !lotR2) return alert("Chưa chọn Lot để xuất!");
+  if ((lotR1 && !slR1) || (lotR2 && !slR2)) return alert("Chưa nhập số lượng xuất!");
+
+  document.getElementById('loading').style.display = 'flex';
+  var data = {
+    ngayXuat: document.getElementById('xuatNgay').value,
+    nguoi: DB.currentUser,
+    kho: document.getElementById('xuatKho').value,
+    may: document.getElementById('xuatMay').value,
+    tenHC: document.getElementById('xuatTenHC').value,
+    lotR1: lotR1,
+    slR1: slR1,
+    lotR2: lotR2,
+    slR2: slR2,
+    loaiChiTiet: (lotR1 && lotR2) ? "Cả 2" : (lotR1 ? "R1" : "R2"),
+    lyDo: document.getElementById('xuatLyDo').value,
+    hangSX: hangSel,
+    nhaCC: nccSel
+  };
+  var res = await callAPI('processExport', {data: data});
+  document.getElementById('loading').style.display = 'none';
+  if(!res || !res.success) return alert(res?.msg || "Xuất kho thất bại!");
+  alert(res.msg || "Xuất kho thành công!");
     await forceRefreshStock(false);
     isReportDirty = true;
 }
@@ -616,20 +676,40 @@ function filterTable(tableId, colIndex, query) { var filter = query.toUpperCase(
 
 function filterTonKho() {
     var k = document.getElementById("f_kho").value.toUpperCase(); var t = document.getElementById("f_ten").value.toUpperCase();
+    var h = document.getElementById("f_hang").value.toUpperCase(); var n = document.getElementById("f_ncc").value.toUpperCase();
     var c1 = document.getElementById("f_color_r1").value; var t1 = document.getElementById("f_text_r1").value.toUpperCase();
     var c2 = document.getElementById("f_color_r2").value; var t2 = document.getElementById("f_text_r2").value.toUpperCase();
     var rows = document.getElementById("tableTonKho").getElementsByTagName("tbody")[0].getElementsByTagName("tr");
     for(var i=0; i<rows.length; i++){
         var td0 = rows[i].cells[0].textContent.toUpperCase(); var td1 = rows[i].cells[1].textContent.toUpperCase();
-        var cell1 = rows[i].cells[2]; var cell2 = rows[i].cells[3];
+        var tdHang = rows[i].cells[2].textContent.toUpperCase(); var tdNcc = rows[i].cells[3].textContent.toUpperCase();
+        var cell1 = rows[i].cells[4]; var cell2 = rows[i].cells[5];
         var match0 = td0.indexOf(k) > -1; var match1 = td1.indexOf(t) > -1;
+        var matchHang = tdHang.indexOf(h) > -1; var matchNcc = tdNcc.indexOf(n) > -1;
         var matchC1 = (c1==="") || cell1.classList.contains(c1); var matchT1 = cell1.textContent.toUpperCase().indexOf(t1) > -1;
         var matchC2 = (c2==="") || cell2.classList.contains(c2); var matchT2 = cell2.textContent.toUpperCase().indexOf(t2) > -1;
-        if(match0 && match1 && matchC1 && matchT1 && matchC2 && matchT2) rows[i].style.display = ""; else rows[i].style.display = "none";
+        if(match0 && match1 && matchHang && matchNcc && matchC1 && matchT1 && matchC2 && matchT2) rows[i].style.display = ""; else rows[i].style.display = "none";
     }
 }
 
-function generateLotList(type, listObj) { var arr = []; for(var k in listObj) if(listObj[k].sl > 0) arr.push({lot: k, ...listObj[k]}); arr.sort((a,b) => a.rawHsd - b.rawHsd); var bestDate = arr.length > 0 ? arr[0].rawHsd : 0; return arr.map(i => { var isBest = i.rawHsd === bestDate; var cls = isBest ? "lot-best" : "lot-warn"; var icon = isBest ? "✅" : "⚠️"; var inputId = `qty_${type}_${i.lot}`; return `<div class="d-flex align-items-center justify-content-between lot-item ${cls}"><div class="flex-grow-1" onclick="document.getElementById('rad_${inputId}').checked=true; document.getElementById('${inputId}').focus(); checkFefo('${type}', ${i.rawHsd}, ${bestDate}, ${arr.length})"><input class="form-check-input me-2" type="radio" name="radio_${type}" id="rad_${inputId}" value="${i.lot}" onchange="checkFefo('${type}', ${i.rawHsd}, ${bestDate}, ${arr.length})"><label class="small cursor-pointer" for="rad_${inputId}">${icon} Lot: <b>${i.lot}</b><br><span class="text-muted ms-4">HSD: ${i.hsd} | Tồn: ${i.sl}</span></label></div><div><input type="number" id="${inputId}" class="form-control form-control-sm qty-input" placeholder="SL" min="1" max="${i.sl}" onfocus="document.getElementById('rad_${inputId}').checked=true; checkFefo('${type}', ${i.rawHsd}, ${bestDate}, ${arr.length})"></div></div>`; }).join(''); }
+function generateLotList(type, listObj) {
+  var arr = [];
+  for (var k in listObj) {
+    var obj = listObj[k];
+    if (obj && obj.sl > 0) arr.push({ key: k, lot: obj.lot || k, hsd: obj.hsd, rawHsd: obj.rawHsd || 0, sl: obj.sl, hang: obj.hang || '', ncc: obj.ncc || '' });
+  }
+  arr.sort((a,b) => (a.rawHsd || 0) - (b.rawHsd || 0));
+  var bestDate = arr.length > 0 ? arr[0].rawHsd : 0;
+  return arr.map(i => {
+    var isBest = i.rawHsd === bestDate;
+    var cls = isBest ? "lot-best" : "lot-warn";
+    var icon = isBest ? "✅" : "⚠️";
+    var safeKey = i.key.replace(/[^a-zA-Z0-9_-]/g, '_');
+    var inputId = `qty_${type}_${safeKey}`;
+    var vendorText = (i.hang || i.ncc) ? `<br><span class="text-muted ms-4">${i.hang || ''}${i.hang && i.ncc ? ' / ' : ''}${i.ncc || ''}</span>` : '';
+    return `<div class="d-flex align-items-center justify-content-between lot-item ${cls}"><div class="flex-grow-1" onclick="document.getElementById('rad_${inputId}').checked=true; document.getElementById('${inputId}').focus(); checkFefo('${type}', ${i.rawHsd}, ${bestDate}, ${arr.length})"><input class="form-check-input me-2" type="radio" name="radio_${type}" id="rad_${inputId}" value="${i.lot}" data-qty-id="${inputId}" data-hang="${i.hang}" data-ncc="${i.ncc}" data-lot="${i.lot}" onchange="checkFefo('${type}', ${i.rawHsd}, ${bestDate}, ${arr.length})"><label class="small cursor-pointer" for="rad_${inputId}">${icon} Lot: <b>${i.lot}</b>${vendorText}<br><span class="text-muted ms-4">HSD: ${i.hsd || ''} | Tồn: ${i.sl}</span></label></div><div><input type="number" id="${inputId}" class="form-control form-control-sm qty-input" placeholder="SL" min="1" max="${i.sl}" onfocus="document.getElementById('rad_${inputId}').checked=true; checkFefo('${type}', ${i.rawHsd}, ${bestDate}, ${arr.length})"></div></div>`;
+  }).join('');
+}
 function checkFefo(type, cur, best, count) { var box = document.getElementById('fefo_alert_' + type); if(box) box.style.display = (count > 1 && cur > best) ? 'block' : 'none'; }
 function applyDatePreset(val) { if (val === "50") { document.getElementById('histFrom').value = ""; document.getElementById('histTo').value = ""; } else { var days = parseInt(val); var to = new Date(); var from = new Date(); from.setDate(to.getDate() - days); document.getElementById('histTo').valueAsDate = to; document.getElementById('histFrom').valueAsDate = from; } loadReport(true); }
 
@@ -714,6 +794,9 @@ function renderReport() {
     var ten = parts[2] || '';
     var dm = dmByKey[normalizeDmKey(kho, may, ten)] || null;
 
+    var hangSet = new Set();
+    var nccSet = new Set();
+
     var cfg = {
       minR: dm ? safeParse(dm[5]) : 0,
       minY: dm ? safeParse(dm[6]) : 0,
@@ -731,12 +814,16 @@ function renderReport() {
         var qty = parseFloat(s.sl);
         if (!isNaN(qty) && qty > 0) {
           total += qty;
+          if (s.hang) hangSet.add(String(s.hang));
+          if (s.ncc) nccSet.add(String(s.ncc));
           var rawHsd = parseFloat(s.rawHsd) || 0;
           var daysLeft = rawHsd ? (rawHsd - now) / (1000 * 60 * 60 * 24) : 0;
           var dateStyle = (cfg.dayR > 0 && rawHsd && daysLeft <= cfg.dayR) ? "lot-expired" : "";
           var hsdText = s.hsd || "";
           var dayText = rawHsd ? ` (${Math.ceil(daysLeft)} ngày)` : "";
-          details += `<div class="lot-detail">Lot: <b>${lot}</b> (SL: <b>${qty}</b>) | HSD: <span class="${dateStyle}">${hsdText}</span>${dayText}</div>`;
+          var lotLabel = s.lot || lot;
+          var vendorText = (s.hang || s.ncc) ? ` | Hãng/NCC: ${s.hang || ''}${s.hang && s.ncc ? ' / ' : ''}${s.ncc || ''}` : '';
+          details += `<div class="lot-detail">Lot: <b>${lotLabel}</b> (SL: <b>${qty}</b>) | HSD: <span class="${dateStyle}">${hsdText}</span>${dayText}${vendorText}</div>`;
         }
       }
       if (cfg.minR > 0 && total <= cfg.minR) colorClass = "cell-critical";
@@ -745,12 +832,21 @@ function renderReport() {
       return { total: total, html: `<div><span class="total-badge">Tổng: ${total}</span></div>${details}`, cls: colorClass };
     }
 
+    function summarize(setObj) {
+      if (setObj.size === 0) return "";
+      if (setObj.size === 1) return Array.from(setObj)[0];
+      return "Nhiều (xem Lot)";
+    }
+
     var c1 = buildCol(item.R1);
     var c2 = isTwoPart ? buildCol(item.R2) : { total: 0, html: '', cls: 'bg-light' };
 
     if (c1.total <= 0 && (!isTwoPart || c2.total <= 0)) return;
 
-    html += `<tr><td><small class="text-muted">${kho}</small><br><b>${may}</b></td><td class="fw-bold text-primary">${ten}</td><td class="${c1.cls}">${c1.html}</td><td class="${c2.cls}">${c2.html}</td></tr>`;
+    var hangDisplay = summarize(hangSet);
+    var nccDisplay = summarize(nccSet);
+
+    html += `<tr><td><small class="text-muted">${kho}</small><br><b>${may}</b></td><td class="fw-bold text-primary">${ten}</td><td>${hangDisplay}</td><td>${nccDisplay}</td><td class="${c1.cls}">${c1.html}</td><td class="${c2.cls}">${c2.html}</td></tr>`;
   });
 
   document.getElementById('reportBody').innerHTML = html;
