@@ -248,6 +248,24 @@
 <datalist id="listAdmChem"></datalist>
 <datalist id="dlHangMaster"></datalist>
 <datalist id="dlNccMaster"></datalist>
+<div class="modal fade" id="modalMasterDelete" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title fw-bold">Xóa giá trị</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="masterDeleteMsg" class="fw-bold text-center"></div>
+        <div class="alert alert-warning mt-3 mb-0 text-center small"><i class="fas fa-triangle-exclamation me-1"></i> Nếu xóa, giá trị sẽ không còn trong danh sách chọn thầu.</div>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+        <button type="button" class="btn btn-danger" onclick="confirmMasterDelete()">Xóa</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="loading"><div class="text-center bg-white p-4 rounded shadow"><div class="spinner-border text-primary" role="status"></div><div class="mt-3 fw-bold text-primary">Đang xử lý...</div></div></div>
 
 <script src="js/app.js"></script>

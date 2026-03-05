@@ -4,6 +4,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxpS5BhQv-ZseJQeA0opLOB
 var DB = { dm: [], tenders: [], stock: {}, history: [], users: [], currentUser: "", currentID: "", role: "" };
 DB.masters = { hang: [], ncc: [] };
 var rowCount = 0; var admRowCount = 0;
+var pendingMasterDelete = { type: '', value: '' };
 
 // SỬA 3: Thêm cờ đánh dấu trạng thái dữ liệu
 var isStockLoaded = false; // Dùng cho tab Xuất (Load 1 lần đầu)
@@ -74,7 +75,12 @@ function renderMasterLists() {
 
   function buildList(arr, type) {
     if(!arr || arr.length === 0) return '<li class="list-group-item text-muted small">Chưa có dữ liệu</li>';
-    return arr.map(v => `<li class="list-group-item d-flex justify-content-between align-items-center">${v}<button class="btn btn-sm btn-outline-danger" onclick="deleteMasterItem('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button></li>`).join('');
+    return arr.map(v => `<li class="list-group-item d-flex justify-content-between align-items-center">${v}
+      <div class="btn-group btn-group-sm" role="group">
+        <button class="btn btn-outline-primary" onclick="editMasterItem('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-pen"></i></button>
+        <button class="btn btn-outline-danger" onclick="openMasterDeleteConfirm('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
+      </div>
+    </li>`).join('');
   }
 
   if(hangList) hangList.innerHTML = buildList(hangArr, 'hang');
@@ -104,15 +110,41 @@ async function saveMasterItem(type) {
   renderMasterLists();
 }
 
-async function deleteMasterItem(type, value) {
-  if(!value) return;
-  if(!confirm('Xóa giá trị này?')) return;
+function openMasterDeleteConfirm(type, value) {
+  pendingMasterDelete = { type: type, value: value };
+  var msg = document.getElementById('masterDeleteMsg');
+  if(msg) msg.innerHTML = `Bạn chắc chắn xóa: <b>${value}</b>?<br><span class="text-danger small">Lưu ý: Giá trị này sẽ biến mất khỏi danh sách chọn thầu.</span>`;
+  var modal = new bootstrap.Modal(document.getElementById('modalMasterDelete'));
+  modal.show();
+}
+
+async function confirmMasterDelete() {
+  if(!pendingMasterDelete.value) return;
   document.getElementById('loading').style.display = 'flex';
-  var res = await callAPI('deleteMasterItem', {itemType: type, value: value});
+  var res = await callAPI('deleteMasterItem', {itemType: pendingMasterDelete.type, value: pendingMasterDelete.value});
   document.getElementById('loading').style.display = 'none';
-  if(!res || !res.success) return alert(res?.msg || 'Xóa thất bại');
+  if(!res || !res.success) { alert(res?.msg || 'Xóa thất bại'); return; }
   if(!DB.masters) DB.masters = {hang: [], ncc: []};
-  DB.masters[type] = (DB.masters[type] || []).filter(x => String(x).toLowerCase() !== String(value).toLowerCase());
+  DB.masters[pendingMasterDelete.type] = (DB.masters[pendingMasterDelete.type] || []).filter(x => String(x).toLowerCase() !== String(pendingMasterDelete.value).toLowerCase());
+  pendingMasterDelete = { type: '', value: '' };
+  bootstrap.Modal.getInstance(document.getElementById('modalMasterDelete')).hide();
+  renderMasterLists();
+}
+
+async function editMasterItem(type, value) {
+  var newVal = prompt('Nhập tên mới', value);
+  if(newVal === null) return;
+  newVal = (newVal || '').trim();
+  if(!newVal) return alert('Giá trị trống');
+  document.getElementById('loading').style.display = 'flex';
+  var res = await callAPI('updateMasterItem', {itemType: type, oldValue: value, newValue: newVal});
+  document.getElementById('loading').style.display = 'none';
+  if(!res || !res.success) return alert(res?.msg || 'Cập nhật thất bại');
+  if(!DB.masters) DB.masters = {hang: [], ncc: []};
+  var arr = DB.masters[type] || [];
+  var idx = arr.findIndex(x => String(x).toLowerCase() === String(value).toLowerCase());
+  if(idx >= 0) arr[idx] = newVal;
+  DB.masters[type] = arr;
   renderMasterLists();
 }
 

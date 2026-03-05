@@ -26,6 +26,7 @@ function doPost(e) {
     else if (action === 'getTenderData') output = getTenderData();
     else if (action === 'addMasterItem') output = addMasterItem(params.itemType, params.value);
     else if (action === 'deleteMasterItem') output = deleteMasterItem(params.itemType, params.value);
+    else if (action === 'updateMasterItem') output = updateMasterItem(params.itemType, params.oldValue, params.newValue);
     else output = { success: false, msg: "Action not found: " + action };
 
   } catch (err) {
@@ -394,6 +395,23 @@ function deleteMasterItem(itemType, value) {
     if (normalizeStr_(data[i][0]).toLowerCase() === val.toLowerCase()) {
       sheet.deleteRow(i+2);
       return {success:true, msg:"Đã xóa"};
+    }
+  }
+  return {success:false, msg:"Không tìm thấy"};
+}
+
+function updateMasterItem(itemType, oldValue, newValue) {
+  var oldVal = normalizeStr_(oldValue);
+  var newVal = normalizeStr_(newValue);
+  if (!oldVal || !newVal) return {success:false, msg:"Giá trị trống"};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = itemType === 'hang' ? ss.getSheetByName("HANG_SX") : ss.getSheetByName("NHA_CC");
+  if (!sheet || sheet.getLastRow() <= 1) return {success:false, msg:"Không tìm thấy"};
+  var data = sheet.getRange(2,1, sheet.getLastRow()-1,1).getValues();
+  for (var i=0;i<data.length;i++) {
+    if (normalizeStr_(data[i][0]).toLowerCase() === oldVal.toLowerCase()) {
+      sheet.getRange(i+2,1).setValue(newVal);
+      return {success:true, msg:"Đã cập nhật"};
     }
   }
   return {success:false, msg:"Không tìm thấy"};
