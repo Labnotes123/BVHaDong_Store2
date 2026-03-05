@@ -2,6 +2,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbwpzt1HtHdkY28RDjHy--2d331DanRw4DooCL8aLptGSmae_-HykZQZB76JMFPuHgjN/exec";
 
 var DB = { dm: [], tenders: [], stock: {}, history: [], users: [], currentUser: "", currentID: "", role: "" };
+DB.masters = { hang: [], ncc: [] };
 var rowCount = 0; var admRowCount = 0;
 
 // SỬA 3: Thêm cờ đánh dấu trạng thái dữ liệu
@@ -56,10 +57,63 @@ async function loadInitialData() {
   var isAdmin = (DB.role === 'Admin');
   const data = await callAPI('getInitialData', {isAdmin: isAdmin});
   if(data) {
-     DB.dm = data.dm || []; DB.users = data.users || []; DB.tenders = data.tenders || [];
+     DB.dm = data.dm || []; DB.users = data.users || []; DB.tenders = data.tenders || []; DB.masters = data.masters || {hang:[], ncc:[]};
      renderTenderView();
+     renderMasterLists();
      if(isAdmin) { renderAdminTables(); renderTenderAdmin(); }
   }
+}
+
+function renderMasterLists() {
+  var hangList = document.getElementById('listHang');
+  var nccList = document.getElementById('listNCC');
+  var hangDl = document.getElementById('dlHangMaster');
+  var nccDl = document.getElementById('dlNccMaster');
+  var hangArr = (DB.masters && DB.masters.hang) ? DB.masters.hang : [];
+  var nccArr = (DB.masters && DB.masters.ncc) ? DB.masters.ncc : [];
+
+  function buildList(arr, type) {
+    if(!arr || arr.length === 0) return '<li class="list-group-item text-muted small">Chưa có dữ liệu</li>';
+    return arr.map(v => `<li class="list-group-item d-flex justify-content-between align-items-center">${v}<button class="btn btn-sm btn-outline-danger" onclick="deleteMasterItem('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button></li>`).join('');
+  }
+
+  if(hangList) hangList.innerHTML = buildList(hangArr, 'hang');
+  if(nccList) nccList.innerHTML = buildList(nccArr, 'ncc');
+  if(hangDl) hangDl.innerHTML = hangArr.map(v => `<option value="${v}">`).join('');
+  if(nccDl) nccDl.innerHTML = nccArr.map(v => `<option value="${v}">`).join('');
+}
+
+async function saveMasterItem(type) {
+  var inputId = type === 'hang' ? 'inputHang' : 'inputNCC';
+  var input = document.getElementById(inputId);
+  if(!input) return;
+  var val = (input.value || '').trim();
+  if(!val) return alert('Vui lòng nhập giá trị');
+
+  document.getElementById('loading').style.display = 'flex';
+  var res = await callAPI('addMasterItem', {itemType: type, value: val});
+  document.getElementById('loading').style.display = 'none';
+  if(!res || !res.success) return alert(res?.msg || 'Thêm thất bại');
+
+  var targetArr = (DB.masters && DB.masters[type]) ? DB.masters[type] : [];
+  var exists = targetArr.some(x => String(x).toLowerCase() === val.toLowerCase());
+  if(!exists) targetArr.push(val);
+  if(!DB.masters) DB.masters = {hang: [], ncc: []};
+  DB.masters[type] = targetArr;
+  input.value = '';
+  renderMasterLists();
+}
+
+async function deleteMasterItem(type, value) {
+  if(!value) return;
+  if(!confirm('Xóa giá trị này?')) return;
+  document.getElementById('loading').style.display = 'flex';
+  var res = await callAPI('deleteMasterItem', {itemType: type, value: value});
+  document.getElementById('loading').style.display = 'none';
+  if(!res || !res.success) return alert(res?.msg || 'Xóa thất bại');
+  if(!DB.masters) DB.masters = {hang: [], ncc: []};
+  DB.masters[type] = (DB.masters[type] || []).filter(x => String(x).toLowerCase() !== String(value).toLowerCase());
+  renderMasterLists();
 }
 
 function filterAdminTable(tableId, colIndex, query) {
@@ -102,7 +156,7 @@ function updateRowInput(idx) {
   document.getElementById('loai_' + idx).value = loai;
   document.getElementById('dv_' + idx).value = dv;
 
-  var html = (loai === 'R1R2') ? `<div class="row g-2"><div class="col-md-6 border-end"><div class="text-primary fw-bold small mb-1">Thành phần R1 / Chính</div><div class="row g-1"><div class="col-4"><input class="form-control form-control-sm" id="lotR1_${idx}" placeholder="Lot R1" required></div><div class="col-4"><input type="date" class="form-control form-control-sm" id="hsdR1_${idx}" required></div><div class="col-4"><input type="number" class="form-control form-control-sm" id="slR1_${idx}" placeholder="SL" required></div></div></div><div class="col-md-6"><div class="text-danger fw-bold small mb-1">Thành phần R2</div><div class="row g-1"><div class="col-4"><input class="form-control form-control-sm" id="lotR2_${idx}" placeholder="Lot R2" required></div><div class="col-4"><input type="date" class="form-control form-control-sm" id="hsdR2_${idx}" required></div><div class="col-4"><input type="number" class="form-control form-control-sm" id="slR2_${idx}" placeholder="SL" required></div></div></div><div class="col-12 text-end text-muted small fst-italic mt-1">Đơn vị: ${dv}</div></div>` : `<div class="row g-2"><div class="col-12"><div class="text-success fw-bold small mb-1">Chi tiết lô hạn</div><div class="row g-1"><div class="col-4"><input class="form-control form-control-sm" id="lotR1_${idx}" placeholder="Lot" required></div><div class="col-4"><input type="date" class="form-control form-control-sm" id="hsdR1_${idx}" required></div><div class="col-4"><input type="number" class="form-control form-control-sm" id="slR1_${idx}" placeholder="SL" required></div></div></div><div class="col-12 text-end text-muted small fst-italic mt-1">Đơn vị: ${dv}</div></div>`;
+  var html = (loai === 'R1R2') ? `<div class="row g-2"><div class="col-md-6 border-end"><div class="text-primary fw-bold small mb-1">Thành phần R1 / Chính</div><div class="row g-1"><div class="col-4"><input class="form-control form-control-sm" id="lotR1_${idx}" placeholder="Lot R1" required></div><div class="col-4"><input type="date" class="form-control form-control-sm" id="hsdR1_${idx}" required></div><div class="col-4"><input type="number" class="form-control form-control-sm" id="slR1_${idx}" placeholder="SL" required oninput="updateTenderQuotaHint(${idx})"></div></div></div><div class="col-md-6"><div class="text-danger fw-bold small mb-1">Thành phần R2</div><div class="row g-1"><div class="col-4"><input class="form-control form-control-sm" id="lotR2_${idx}" placeholder="Lot R2" required></div><div class="col-4"><input type="date" class="form-control form-control-sm" id="hsdR2_${idx}" required></div><div class="col-4"><input type="number" class="form-control form-control-sm" id="slR2_${idx}" placeholder="SL" required oninput="updateTenderQuotaHint(${idx})"></div></div></div><div class="col-12 text-end text-muted small fst-italic mt-1">Đơn vị: ${dv}</div></div>` : `<div class="row g-2"><div class="col-12"><div class="text-success fw-bold small mb-1">Chi tiết lô hạn</div><div class="row g-1"><div class="col-4"><input class="form-control form-control-sm" id="lotR1_${idx}" placeholder="Lot" required></div><div class="col-4"><input type="date" class="form-control form-control-sm" id="hsdR1_${idx}" required></div><div class="col-4"><input type="number" class="form-control form-control-sm" id="slR1_${idx}" placeholder="SL" required oninput="updateTenderQuotaHint(${idx})"></div></div></div><div class="col-12 text-end text-muted small fst-italic mt-1">Đơn vị: ${dv}</div></div>`;
   area.innerHTML = html;
   renderTenderSelector(idx, kho, may, tenHC);
 }
@@ -164,6 +218,7 @@ function renderTenderSelector(idx, kho, may, tenHC) {
           <label class="small fw-bold text-muted">SL còn lại (quy đổi)</label>
           <div id="remainBadge_${idx}" class="badge bg-light text-dark w-100 p-2 border"></div>
         </div>
+        <div class="col-12 mt-2" id="quotaHint_${idx}"></div>
       </div>
       <input type="hidden" id="tenderKey_${idx}">
     </div>`;
@@ -191,6 +246,58 @@ function onTenderSelect(idx) {
     badge.className = 'badge ' + cls + ' w-100 p-2';
     badge.innerText = remain + ' ' + (tender && tender.dvSd ? tender.dvSd : '');
   }
+
+  updateTenderQuotaHint(idx);
+}
+
+function calcTenderUsageClient(tender, loai, slR1, slR2) {
+  var q1 = Number(slR1) || 0;
+  var q2 = Number(slR2) || 0;
+  var r1pb = Number(tender && tender.r1PerBox ? tender.r1PerBox : 1) || 1;
+  var r2pb = Number(tender && tender.r2PerBox ? tender.r2PerBox : 1) || 1;
+  var boxes = 0; var warn = "";
+
+  if (loai === 'R1R2') {
+    var boxR1 = r1pb > 0 ? (q1 / r1pb) : 0;
+    var boxR2 = r2pb > 0 ? (q2 / r2pb) : 0;
+    boxes = Math.max(boxR1, boxR2);
+    if (boxR1 && boxR2) {
+      var diff = Math.abs(boxR1 - boxR2) / Math.max(boxR1, boxR2);
+      if (diff > 0.1) warn = "R1/R2 lệch, cân đối lại.";
+    }
+  } else {
+    boxes = r1pb > 0 ? (q1 / r1pb) : q1;
+  }
+
+  var heso = Number(tender && tender.heso ? tender.heso : 0) || 0;
+  return { useBoxes: boxes, useQD: boxes * heso, warn: warn };
+}
+
+function updateTenderQuotaHint(idx) {
+  var hintBox = document.getElementById('quotaHint_' + idx);
+  if(!hintBox) return;
+  var tenderKeyEl = document.getElementById('tenderKey_' + idx);
+  var tenderKey = tenderKeyEl ? tenderKeyEl.value : '';
+  var tender = (DB.tenders || []).find(t => t.tenderKey === tenderKey);
+  if(!tender) {
+    hintBox.innerHTML = '<div class="text-muted small">Chọn thầu để xem hạn mức</div>';
+    return;
+  }
+
+  var loai = document.getElementById('loai_' + idx) ? document.getElementById('loai_' + idx).value : 'Single';
+  var sl1 = document.getElementById('slR1_' + idx) ? Number(document.getElementById('slR1_' + idx).value) || 0 : 0;
+  var sl2El = document.getElementById('slR2_' + idx);
+  var sl2 = sl2El ? Number(sl2El.value) || 0 : 0;
+
+  var usage = calcTenderUsageClient(tender, loai, sl1, sl2);
+  var remainBoxes = (Number(tender.soLuongThau) || 0) - (Number(tender.usedThau) || 0);
+  var remainQD = (Number(tender.soLuongQuyDoi) || 0) - (Number(tender.usedQuyDoi) || 0);
+  var afterBoxes = remainBoxes - usage.useBoxes;
+  var afterQD = remainQD - usage.useQD;
+  var cls = afterBoxes < 0 ? 'text-danger fw-bold' : (afterBoxes <= remainBoxes * 0.2 ? 'text-warning fw-bold' : 'text-success');
+  var warnText = usage.warn ? ` <span class="text-danger">${usage.warn}</span>` : '';
+
+  hintBox.innerHTML = `<div class="small ${cls}">Hạn mức còn: ${remainBoxes.toFixed(2)} ${tender.dvThau || 'ĐV thầu'} (~${remainQD.toFixed(1)} ${tender.dvSd || ''}). Sau nhập: ${Math.max(0, afterBoxes).toFixed(2)} ${tender.dvThau || ''} (~${Math.max(0, afterQD).toFixed(1)} ${tender.dvSd || ''}).${warnText}</div>`;
 }
 
 function onTabThauClick() {
@@ -215,7 +322,7 @@ function renderTenderView() {
   if(addBtn) addBtn.style.display = (DB.role === 'Admin') ? 'inline-flex' : 'none';
 
   if(!DB.tenders || DB.tenders.length === 0) {
-    body.innerHTML = `<tr><td colspan="13" class="text-center text-muted py-4"><i class="fas fa-circle-info me-2"></i>Chưa có dữ liệu thầu</td></tr>`;
+    body.innerHTML = `<tr><td colspan="15" class="text-center text-muted py-4"><i class="fas fa-circle-info me-2"></i>Chưa có dữ liệu thầu</td></tr>`;
     return;
   }
 
@@ -234,6 +341,8 @@ function renderTenderView() {
       <td>${t.nam}</td>
       <td>${t.dvThau}</td>
       <td>${t.heso}</td>
+      <td>${t.r1PerBox || 1}</td>
+      <td>${t.r2PerBox || 1}</td>
       <td>${t.soLuongThau}</td>
       <td class="text-muted">${used}</td>
       <td class="${warnCls}">${remain}</td>

@@ -24,6 +24,8 @@ function doPost(e) {
     else if (action === 'saveTender') output = saveTender(params.data);
     else if (action === 'toggleTender') output = toggleTender(params.rowIndex, params.status);
     else if (action === 'getTenderData') output = getTenderData();
+    else if (action === 'addMasterItem') output = addMasterItem(params.itemType, params.value);
+    else if (action === 'deleteMasterItem') output = deleteMasterItem(params.itemType, params.value);
     else output = { success: false, msg: "Action not found: " + action };
 
   } catch (err) {
@@ -56,11 +58,12 @@ function getInitialData(isAdmin) {
   var dmRaw = sheetDM.getLastRow() > 1 ? sheetDM.getRange(2, 1, sheetDM.getLastRow()-1, 9).getValues() : [];
   var users = [];
   var tenderData = getTenderData();
+  var masters = getMasterLists();
   if (isAdmin) {
     var sheetUser = ss.getSheetByName("TAI_KHOAN");
     if(sheetUser.getLastRow() > 1) users = sheetUser.getRange(2, 1, sheetUser.getLastRow()-1, 5).getValues();
   }
-  return { dm: dmRaw, users: users, tenders: tenderData.tenders || [] };
+  return { dm: dmRaw, users: users, tenders: tenderData.tenders || [], masters: masters };
 }
 
 function saveUser(data) {
@@ -132,7 +135,7 @@ function processImport(dataList) {
     }
 
     var useCalc = calcTenderUse_(data, tender);
-    var useThau = tender.heso > 0 ? (useCalc.useQtyBoxes / tender.heso) : 0;
+    var useThau = useCalc.useQtyBoxes; // số hộp/đơn vị thầu cần dùng
     var currentUsedThau = tenderUsageMap[tenderKey] || 0;
     if (currentUsedThau + useThau - tender.soLuongThau > 0.0001) {
       throw new Error("Vượt quá số lượng thầu còn lại cho " + data.tenHC + " (" + tender.hang + " - " + tender.ncc + ")");
@@ -354,6 +357,48 @@ function toggleTender(rowIndex, status) {
   return { success: true, msg: "Đã cập nhật trạng thái" };
 }
 
+function getMasterLists() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hangSheet = ss.getSheetByName("HANG_SX");
+  if (!hangSheet) { hangSheet = ss.insertSheet("HANG_SX"); hangSheet.appendRow(["Hang_SX"]); }
+  var nccSheet = ss.getSheetByName("NHA_CC");
+  if (!nccSheet) { nccSheet = ss.insertSheet("NHA_CC"); nccSheet.appendRow(["Nha_CC"]); }
+  var hang = hangSheet.getLastRow() > 1 ? hangSheet.getRange(2,1, hangSheet.getLastRow()-1,1).getValues().flat().filter(String) : [];
+  var ncc = nccSheet.getLastRow() > 1 ? nccSheet.getRange(2,1, nccSheet.getLastRow()-1,1).getValues().flat().filter(String) : [];
+  return {hang: hang, ncc: ncc};
+}
+
+function addMasterItem(itemType, value) {
+  var val = normalizeStr_(value);
+  if (!val) return {success:false, msg:"Giá trị trống"};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = itemType === 'hang' ? ss.getSheetByName("HANG_SX") : ss.getSheetByName("NHA_CC");
+  if (!sheet) {
+    sheet = ss.insertSheet(itemType === 'hang' ? "HANG_SX" : "NHA_CC");
+    sheet.appendRow([itemType === 'hang' ? "Hang_SX" : "Nha_CC"]);
+  }
+  var existing = sheet.getLastRow() > 1 ? sheet.getRange(2,1, sheet.getLastRow()-1,1).getValues().flat() : [];
+  var exists = existing.some(function(x){ return normalizeStr_(x).toLowerCase() === val.toLowerCase(); });
+  if (!exists) sheet.appendRow([val]);
+  return {success:true, msg: exists ? "Đã tồn tại" : "Đã thêm"};
+}
+
+function deleteMasterItem(itemType, value) {
+  var val = normalizeStr_(value);
+  if (!val) return {success:false, msg:"Giá trị trống"};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = itemType === 'hang' ? ss.getSheetByName("HANG_SX") : ss.getSheetByName("NHA_CC");
+  if (!sheet || sheet.getLastRow() <= 1) return {success:false, msg:"Không tìm thấy"};
+  var data = sheet.getRange(2,1, sheet.getLastRow()-1,1).getValues();
+  for (var i=0;i<data.length;i++) {
+    if (normalizeStr_(data[i][0]).toLowerCase() === val.toLowerCase()) {
+      sheet.deleteRow(i+2);
+      return {success:true, msg:"Đã xóa"};
+    }
+  }
+  return {success:false, msg:"Không tìm thấy"};
+}
+
 function findTenderByKey_(tenderKey) {
   var td = getTenderData();
   if (!td || !td.tenders) return null;
@@ -363,11 +408,31 @@ function findTenderByKey_(tenderKey) {
   return null;
 }
 
-function calcTenderUse_(data) {
+function calcTenderUse_(data, tender) {
   var q1 = toSafeNumber_(data.slR1);
   var q2 = toSafeNumber_(data.slR2);
-  if (data.loaiNhap === 'R1R2') return Math.max(q1, q2);
-  return q1;
+  var r1pb = toSafeNumber_(tender.r1PerBox) || 1;
+  var r2pb = toSafeNumber_(tender.r2PerBox) || 1;
+  var useBoxes = 0;
+  var warn = "";
+
+  if (data.loaiNhap === 'R1R2') {
+    var boxR1 = r1pb > 0 ? (q1 / r1pb) : 0;
+    var boxR2 = r2pb > 0 ? (q2 / r2pb) : 0;
+    useBoxes = Math.max(boxR1, boxR2);
+    if (boxR1 && boxR2) {
+      var diffRatio = Math.abs(boxR1 - boxR2) / Math.max(boxR1, boxR2);
+      if (diffRatio > 0.1) warn = "R1/R2 lệch nhiều, kiểm tra lại số lượng.";
+    }
+  } else {
+    useBoxes = r1pb > 0 ? (q1 / r1pb) : q1;
+  }
+
+  return {
+    useQtyBoxes: useBoxes,
+    useQtyQD: useBoxes * (toSafeNumber_(tender.heso) || 0),
+    warnMsg: warn
+  };
 }
 
 function toSafeNumber_(v) {
