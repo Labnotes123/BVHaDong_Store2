@@ -101,7 +101,7 @@
              <div class="d-flex gap-2">
                 <button class="btn btn-outline-success btn-sm fw-bold" onclick="exportExcel('tableTonKho', 'Ton_Kho')"><i class="fas fa-file-excel me-1"></i> Excel</button>
                 <button class="btn btn-outline-danger btn-sm fw-bold" onclick="exportPDF('containerTonKho', 'Ton_Kho')"><i class="fas fa-file-pdf me-1"></i> PDF</button>
-                <button class="btn btn-light text-success border-success btn-sm" onclick="loadReport(true)"><i class="fas fa-sync me-1"></i> Tải lại</button>
+                <button class="btn btn-light text-success border-success btn-sm" onclick="loadStockData(true)"><i class="fas fa-sync me-1"></i> Tải lại</button>
              </div>
            </div>
 
@@ -138,10 +138,10 @@
               </div>
           </div>
           <div class="row g-2 mb-3 bg-light p-3 rounded border">
-             <div class="col-md-3"><label class="small fw-bold text-muted">Chọn nhanh</label><select id="histPreset" class="form-select form-select-sm" onchange="applyDatePreset(this.value)"><option value="50">50 Gần nhất</option><option value="7">1 Tuần gần đây</option><option value="14">2 Tuần gần đây</option><option value="30">1 Tháng gần đây</option><option value="90">3 Tháng gần đây</option><option value="180">6 Tháng gần đây</option><option value="365">1 Năm gần đây</option></select></div>
+             <div class="col-md-3"><label class="small fw-bold text-muted">Chọn nhanh</label><select id="histPreset" class="form-select form-select-sm" onchange="applyDatePreset(this.value)"><option value="15">15 Gần nhất</option><option value="7">1 Tuần gần đây</option><option value="14">2 Tuần gần đây</option><option value="30">1 Tháng gần đây</option><option value="90">3 Tháng gần đây</option><option value="180">6 Tháng gần đây</option><option value="365">1 Năm gần đây</option></select></div>
              <div class="col-md-3"><label class="small fw-bold text-muted">Từ ngày</label><input type="date" id="histFrom" class="form-control form-control-sm"></div>
              <div class="col-md-3"><label class="small fw-bold text-muted">Đến ngày</label><input type="date" id="histTo" class="form-control form-control-sm"></div>
-             <div class="col-md-3 d-flex align-items-end"><button class="btn btn-secondary btn-sm w-100 fw-bold" onclick="loadReport(true)"><i class="fas fa-filter me-1"></i> LỌC DỮ LIỆU</button></div>
+             <div class="col-md-3 d-flex align-items-end"><button class="btn btn-secondary btn-sm w-100 fw-bold" onclick="loadHistoryData(true)"><i class="fas fa-filter me-1"></i> LỌC DỮ LIỆU</button></div>
           </div>
           <div id="containerLichSu" class="table-responsive table-scroll">
              <table class="table table-striped table-sm text-nowrap" id="tableLichSu">

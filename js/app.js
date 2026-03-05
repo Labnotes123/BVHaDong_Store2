@@ -619,24 +619,7 @@ async function onTabXuatClick() {
 }
 
 async function forceRefreshStock(showAlert = true) {
-    document.getElementById('loadingStockIndicator').style.display = 'block';
-    if(showAlert) document.getElementById('loading').style.display = 'flex';
-    var data = await callAPI('getReport', {from: "", to: ""});
-    if (data && data.error) {
-      document.getElementById('loadingStockIndicator').style.display = 'none';
-      if(showAlert) document.getElementById('loading').style.display = 'none';
-      return alert(data.error);
-    }
-    DB.stock = data.stock || {};
-    isStockLoaded = true;
-    document.getElementById('loadingStockIndicator').style.display = 'none';
-    if(showAlert) {
-        document.getElementById('loading').style.display = 'none';
-        alert("Đã cập nhật dữ liệu tồn kho mới nhất!");
-    }
-    if(document.getElementById('xuatTenHC').value) {
-        showStockDetails();
-    }
+  await loadStockData(true, showAlert);
 }
 
 function showStockDetails() {
@@ -677,11 +660,12 @@ function findStockByKey(rawKey) {
 }
 
 async function onTabBaocaoClick() {
-    if (isReportDirty || DB.history.length === 0) {
-        await loadReport(false);
-    } else {
-        console.log("Dữ liệu báo cáo chưa thay đổi, dùng cache.");
-    }
+  var now = Date.now();
+  var cacheExpired = (now - stockCacheAt) > STOCK_CACHE_MS;
+  if (isReportDirty || cacheExpired || !isStockLoaded) {
+    await loadStockData(false, false);
+  }
+  // Không tự tải lịch sử; người dùng nhấn "LỌC DỮ LIỆU" khi cần
 }
 
 async function submitXuat(e) {
@@ -779,36 +763,101 @@ function generateLotList(type, listObj) {
   }).join('');
 }
 function checkFefo(type, cur, best, count) { var box = document.getElementById('fefo_alert_' + type); if(box) box.style.display = (count > 1 && cur > best) ? 'block' : 'none'; }
-function applyDatePreset(val) { if (val === "50") { document.getElementById('histFrom').value = ""; document.getElementById('histTo').value = ""; } else { var days = parseInt(val); var to = new Date(); var from = new Date(); from.setDate(to.getDate() - days); document.getElementById('histTo').valueAsDate = to; document.getElementById('histFrom').valueAsDate = from; } loadReport(true); }
+function applyDatePreset(val) {
+  if (val === "15") {
+    document.getElementById('histFrom').value = ""; document.getElementById('histTo').value = "";
+  } else {
+    var days = parseInt(val);
+    var to = new Date();
+    var from = new Date();
+    from.setDate(to.getDate() - days);
+    document.getElementById('histTo').valueAsDate = to;
+    document.getElementById('histFrom').valueAsDate = from;
+  }
+  loadHistoryData(true);
+}
 
-async function loadReport(forceReload) {
-    var from = "", to = "";
+async function loadStockData(forceReload = false, showAlert = true) {
+  var now = Date.now();
+  var cacheExpired = (now - stockCacheAt) > STOCK_CACHE_MS;
+  if (!forceReload && isStockLoaded && !isReportDirty && !cacheExpired) return;
 
-    if (!forceReload && !isReportDirty && DB.history.length > 0) {
-        return;
-    }
+  document.getElementById('loadingStockIndicator').style.display = 'block';
+  if (showAlert) document.getElementById('loading').style.display = 'flex';
 
-    if (document.getElementById('histFrom').value && document.getElementById('histTo').value) {
-        from = document.getElementById('histFrom').value;
-        to = document.getElementById('histTo').value;
-    }
+  var data = await callAPI('getStock', {});
+  if (!data || data.error || !data.stock) {
+    // Fallback dùng API cũ nếu backend chưa tách
+    data = await callAPI('getReport', {from: "", to: ""});
+  }
 
-    if (document.getElementById('histPreset').value === "50" && !from) { from = ""; to = ""; }
+  document.getElementById('loadingStockIndicator').style.display = 'none';
+  if (!data || data.error) {
+    if (showAlert) document.getElementById('loading').style.display = 'none';
+    return alert(data?.error || 'Không tải được tồn kho');
+  }
 
-    document.getElementById('loading').style.display = 'flex';
-    var data = await callAPI('getReport', {from: from, to: to});
-    if (data && data.error) {
-      document.getElementById('loading').style.display = 'none';
-      return alert(data.error);
-    }
-    DB.stock = data.stock || {};
-    DB.history = data.history || [];
+  DB.stock = data.stock || {};
+  isStockLoaded = true;
+  isReportDirty = false;
+  stockCacheAt = Date.now();
 
-    renderReport();
-    renderHistory();
+  renderReport();
+  if (document.getElementById('xuatTenHC').value) {
+    showStockDetails();
+  }
 
-    isReportDirty = false;
+  if (showAlert) {
     document.getElementById('loading').style.display = 'none';
+    alert('Đã cập nhật dữ liệu tồn kho mới nhất!');
+  }
+}
+
+async function loadHistoryData(forceReload = false) {
+  var from = "", to = "";
+  var presetVal = document.getElementById('histPreset') ? document.getElementById('histPreset').value : "15";
+  var limit = 15;
+
+  var fromInput = document.getElementById('histFrom');
+  var toInput = document.getElementById('histTo');
+  if (fromInput && fromInput.value && toInput && toInput.value) {
+    from = fromInput.value;
+    to = toInput.value;
+    limit = 0; // bỏ limit khi lọc theo ngày
+  } else if (!isNaN(parseInt(presetVal))) {
+    limit = parseInt(presetVal) || 15;
+  }
+
+  if (!forceReload && DB.history.length > 0 && from === "" && to === "") {
+    return; // giữ cache lịch sử nếu đã có và chưa yêu cầu lọc
+  }
+
+  document.getElementById('loading').style.display = 'flex';
+  var payload = {};
+  if (from || to) { payload.from = from; payload.to = to; }
+  else { payload.limit = limit; }
+
+  var data = await callAPI('getHistory', payload);
+  if (!data || data.error || !data.history) {
+    // Fallback API cũ
+    var fallback = await callAPI('getReport', {from: from, to: to});
+    if (!fallback || fallback.error) {
+      document.getElementById('loading').style.display = 'none';
+      return alert(data?.error || fallback?.error || 'Không tải được lịch sử');
+    }
+    DB.history = fallback.history || [];
+  } else {
+    DB.history = data.history || [];
+  }
+
+  renderHistory();
+  document.getElementById('loading').style.display = 'none';
+}
+
+// Giữ hàm cũ cho tương thích, gọi cả tồn kho và lịch sử
+async function loadReport(forceReload) {
+  await loadStockData(!!forceReload, false);
+  await loadHistoryData(!!forceReload);
 }
 
 function exportExcel(tableId, name) { var wb = XLSX.utils.table_to_book(document.getElementById(tableId), {sheet: "Sheet1"}); XLSX.writeFile(wb, name + "_" + new Date().toISOString().slice(0,10) + ".xlsx"); }
@@ -923,6 +972,8 @@ function renderReport() {
 
 var sortDir = -1;
 var sortCol = 'sortTime';
+var stockCacheAt = 0;
+var STOCK_CACHE_MS = 5 * 60 * 1000; // 5 minutes cache for stock
 
 function sortHistory(col) {
     if(sortCol === col) sortDir *= -1;
