@@ -76,18 +76,43 @@ function renderMasterLists() {
 
   function buildList(arr, type) {
     if(!arr || arr.length === 0) return '<li class="list-group-item text-muted small">Chưa có dữ liệu</li>';
-    return arr.map(v => `<li class="list-group-item d-flex justify-content-between align-items-center">${v}
-      <div class="btn-group btn-group-sm" role="group">
-        <button class="btn btn-outline-primary" onclick="openMasterEdit('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-pen"></i></button>
-        <button class="btn btn-outline-danger" onclick="openMasterDeleteConfirm('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
-      </div>
-    </li>`).join('');
+    return arr.map((v, idx) => {
+      var inputId = `${type}_val_${idx}`;
+      var safeVal = String(v || '').replace(/"/g, '&quot;');
+      var safeOld = v.replace(/'/g, "\\'");
+      return `<li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+        <input id="${inputId}" class="form-control form-control-sm" value="${safeVal}" aria-label="Giá trị ${type} ${idx+1}">
+        <div class="btn-group btn-group-sm" role="group">
+          <button class="btn btn-outline-success" title="Lưu" onclick="saveMasterInline('${type}','${safeOld}','${inputId}')"><i class="fas fa-check"></i></button>
+          <button class="btn btn-outline-danger" title="Xóa" onclick="openMasterDeleteConfirm('${type}','${safeOld}')"><i class="fas fa-trash"></i></button>
+        </div>
+      </li>`;
+    }).join('');
   }
 
   if(hangList) hangList.innerHTML = buildList(hangArr, 'hang');
   if(nccList) nccList.innerHTML = buildList(nccArr, 'ncc');
   if(hangDl) hangDl.innerHTML = hangArr.map(v => `<option value="${v}">`).join('');
   if(nccDl) nccDl.innerHTML = nccArr.map(v => `<option value="${v}">`).join('');
+}
+
+async function saveMasterInline(type, oldValue, inputId) {
+  var input = document.getElementById(inputId);
+  if(!input) return;
+  var newVal = (input.value || '').trim();
+  if(!newVal || newVal === oldValue) return;
+
+  document.getElementById('loading').style.display = 'flex';
+  var res = await callAPI('updateMasterItem', {itemType: type, oldValue: oldValue, newValue: newVal});
+  document.getElementById('loading').style.display = 'none';
+  if(!res || !res.success) { alert(res?.msg || 'Cập nhật thất bại'); return; }
+
+  if(!DB.masters) DB.masters = {hang: [], ncc: []};
+  var arr = DB.masters[type] || [];
+  var idx = arr.findIndex(x => String(x).toLowerCase() === String(oldValue).toLowerCase());
+  if(idx >= 0) arr[idx] = newVal;
+  DB.masters[type] = arr;
+  renderMasterLists();
 }
 
 async function saveMasterItem(type) {
@@ -413,6 +438,21 @@ function renderTenderView() {
   body.innerHTML = rows;
 }
 
+function updateTenderMachineOptions(kho) {
+  var machineDl = document.getElementById('listAdmMachines');
+  if(!machineDl) return;
+  var machines = [...new Set(DB.dm.filter(r => normalizeKeyPart(r[0]) === normalizeKeyPart(kho)).map(r => r[1]))];
+  machineDl.innerHTML = machines.map(m => `<option value="${m}">`).join('');
+}
+
+function updateTenderChemOptions(kho, may) {
+  var chemDl = document.getElementById('listAdmChem');
+  if(!chemDl) return;
+  var chems = DB.dm.filter(r => normalizeKeyPart(r[0]) === normalizeKeyPart(kho) && normalizeKeyPart(r[1]) === normalizeKeyPart(may)).map(r => r[2]);
+  var uniqueChems = [...new Set(chems)];
+  chemDl.innerHTML = uniqueChems.map(c => `<option value="${c}">`).join('');
+}
+
 function renderTenderAdmin() {
   var selKho = document.getElementById('tndKho');
   if(!selKho) return;
@@ -420,17 +460,25 @@ function renderTenderAdmin() {
   var khoList = [...new Set(DB.dm.map(r => r[0]))];
   khoList.forEach(k => { var opt = document.createElement('option'); opt.value = k; opt.text = k; selKho.add(opt); });
 
-  var machineDl = document.getElementById('listAdmMachines');
-  var chemDl = document.getElementById('listAdmChem');
-  if(machineDl) {
-    machineDl.innerHTML = '';
-    var machines = [...new Set(DB.dm.map(r => r[1]))];
-    machines.forEach(m => machineDl.innerHTML += `<option value="${m}">`);
-  }
-  if(chemDl) {
-    chemDl.innerHTML = '';
-    var chems = [...new Set(DB.dm.map(r => r[2]))];
-    chems.forEach(c => chemDl.innerHTML += `<option value="${c}">`);
+  var currentKho = selKho.value || khoList[0] || '';
+  selKho.value = currentKho;
+  updateTenderMachineOptions(currentKho);
+  var mayVal = document.getElementById('tndMay') ? document.getElementById('tndMay').value : '';
+  updateTenderChemOptions(currentKho, mayVal);
+
+  selKho.onchange = function() {
+    var kho = this.value;
+    var mayInput = document.getElementById('tndMay');
+    if(mayInput) mayInput.value = '';
+    updateTenderMachineOptions(kho);
+    updateTenderChemOptions(kho, '');
+  };
+
+  var mayInput = document.getElementById('tndMay');
+  if(mayInput) {
+    mayInput.onchange = function() {
+      updateTenderChemOptions(selKho.value, this.value);
+    };
   }
 }
 
@@ -455,6 +503,10 @@ function openTenderModal(rowIndex) {
   document.getElementById('tndSoLuong').value = data.soLuongThau || '';
   document.getElementById('tndNote').value = data.note || '';
   document.getElementById('tndStatus').value = data.status || 'Active';
+
+   // Refresh datalists based on selected kho/máy
+  updateTenderMachineOptions(document.getElementById('tndKho').value);
+  updateTenderChemOptions(document.getElementById('tndKho').value, document.getElementById('tndMay').value);
 
   new bootstrap.Modal(document.getElementById('modalTender')).show();
 }
@@ -822,7 +874,7 @@ function renderReport() {
 
     function buildCol(listObj) {
       var total = 0;
-      var details = "";
+      var detailParts = [];
       var colorClass = "";
       listObj = listObj || {};
       for (var lot in listObj) {
@@ -839,13 +891,14 @@ function renderReport() {
           var dayText = rawHsd ? ` (${Math.ceil(daysLeft)} ngày)` : "";
           var lotLabel = s.lot || lot;
           var vendorText = (s.hang || s.ncc) ? ` | Hãng/NCC: ${s.hang || ''}${s.hang && s.ncc ? ' / ' : ''}${s.ncc || ''}` : '';
-          details += `<div class="lot-detail">Lot: <b>${lotLabel}</b> (SL: <b>${qty}</b>) | HSD: <span class="${dateStyle}">${hsdText}</span>${dayText}${vendorText}</div>`;
+          detailParts.push(`Lot: <b>${lotLabel}</b> (SL: <b>${qty}</b>) | HSD: <span class="${dateStyle}">${hsdText}</span>${dayText}${vendorText}`);
         }
       }
       if (cfg.minR > 0 && total <= cfg.minR) colorClass = "cell-critical";
       else if (cfg.minY > 0 && total <= cfg.minY) colorClass = "cell-warning";
       else if (total > 0) colorClass = "cell-ok";
-      return { total: total, html: `<div><span class="total-badge">Tổng: ${total}</span></div>${details}`, cls: colorClass };
+      var detailHtml = detailParts.length ? `<div class="lot-detail-inline">${detailParts.join(' · ')}</div>` : '';
+      return { total: total, html: `<div><span class="total-badge">Tổng: ${total}</span></div>${detailHtml}`, cls: colorClass };
     }
 
     function summarize(setObj) {
