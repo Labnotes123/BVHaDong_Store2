@@ -5,6 +5,7 @@ var DB = { dm: [], tenders: [], stock: {}, history: [], users: [], currentUser: 
 DB.masters = { hang: [], ncc: [] };
 var rowCount = 0; var admRowCount = 0;
 var pendingMasterDelete = { type: '', value: '' };
+var pendingMasterEdit = { type: '', value: '' };
 
 // SỬA 3: Thêm cờ đánh dấu trạng thái dữ liệu
 var isStockLoaded = false; // Dùng cho tab Xuất (Load 1 lần đầu)
@@ -77,7 +78,7 @@ function renderMasterLists() {
     if(!arr || arr.length === 0) return '<li class="list-group-item text-muted small">Chưa có dữ liệu</li>';
     return arr.map(v => `<li class="list-group-item d-flex justify-content-between align-items-center">${v}
       <div class="btn-group btn-group-sm" role="group">
-        <button class="btn btn-outline-primary" onclick="editMasterItem('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-pen"></i></button>
+        <button class="btn btn-outline-primary" onclick="openMasterEdit('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-pen"></i></button>
         <button class="btn btn-outline-danger" onclick="openMasterDeleteConfirm('${type}','${v.replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
       </div>
     </li>`).join('');
@@ -131,20 +132,35 @@ async function confirmMasterDelete() {
   renderMasterLists();
 }
 
-async function editMasterItem(type, value) {
-  var newVal = prompt('Nhập tên mới', value);
-  if(newVal === null) return;
-  newVal = (newVal || '').trim();
-  if(!newVal) return alert('Giá trị trống');
+function openMasterEdit(type, value) {
+  pendingMasterEdit = { type: type, value: value };
+  var title = document.getElementById('masterEditTitle');
+  var input = document.getElementById('masterEditInput');
+  if (title) title.innerText = type === 'hang' ? 'Sửa Hãng sản xuất' : 'Sửa Nhà cung cấp';
+  if (input) input.value = value || '';
+  var modal = new bootstrap.Modal(document.getElementById('modalMasterEdit'));
+  modal.show();
+}
+
+async function saveMasterEdit() {
+  if (!pendingMasterEdit.type || !pendingMasterEdit.value) return;
+  var input = document.getElementById('masterEditInput');
+  var newVal = (input && input.value || '').trim();
+  if(!newVal) return; // không hiển thị thông báo theo yêu cầu
+
   document.getElementById('loading').style.display = 'flex';
-  var res = await callAPI('updateMasterItem', {itemType: type, oldValue: value, newValue: newVal});
+  var res = await callAPI('updateMasterItem', {itemType: pendingMasterEdit.type, oldValue: pendingMasterEdit.value, newValue: newVal});
   document.getElementById('loading').style.display = 'none';
-  if(!res || !res.success) return alert(res?.msg || 'Cập nhật thất bại');
+  if(!res || !res.success) { alert(res?.msg || 'Cập nhật thất bại'); return; }
+
   if(!DB.masters) DB.masters = {hang: [], ncc: []};
-  var arr = DB.masters[type] || [];
-  var idx = arr.findIndex(x => String(x).toLowerCase() === String(value).toLowerCase());
+  var arr = DB.masters[pendingMasterEdit.type] || [];
+  var idx = arr.findIndex(x => String(x).toLowerCase() === String(pendingMasterEdit.value).toLowerCase());
   if(idx >= 0) arr[idx] = newVal;
-  DB.masters[type] = arr;
+  DB.masters[pendingMasterEdit.type] = arr;
+  pendingMasterEdit = { type: '', value: '' };
+  var modalEl = document.getElementById('modalMasterEdit');
+  if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
   renderMasterLists();
 }
 
